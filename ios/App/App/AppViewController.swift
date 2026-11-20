@@ -99,11 +99,10 @@ final class AppBridgeViewController: CAPBridgeViewController {
         return descriptor
     }
 
-    override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
-        let configuration = super.webViewConfiguration(for: instanceConfiguration)
-        let contentController = configuration.userContentController
-        let localScheme = instanceConfiguration.localURL.scheme ?? "capacitor"
-
+    /// User scripts and the setup message handler. Must run in capacitorDidLoad(): Capacitor replaces
+    /// the userContentController of webViewConfiguration(for:) with its own, but loads the start page
+    /// only later (viewDidLoad).
+    private func installContentScripts(on contentController: WKUserContentController, localScheme: String) {
         if let host = settings?.appURL.host {
             contentController.addUserScript(WKUserScript(
                 source: AppScripts.preferNewDesign(onHost: host),
@@ -126,15 +125,18 @@ final class AppBridgeViewController: CAPBridgeViewController {
             self.webView?.load(URLRequest(url: settings.appURL))
         }
         contentController.addScriptMessageHandler(handler, contentWorld: .page, name: SetupMessageHandler.name)
-
-        return configuration
     }
 
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
         guard let webView = webView, let config = bridge?.config else { return }
 
+        installContentScripts(on: webView.configuration.userContentController,
+                              localScheme: config.localURL.scheme ?? "capacitor")
         webView.allowsBackForwardNavigationGestures = true
+        // Capacitor turns bouncing off, but the pull-to-refresh control needs it
+        webView.scrollView.bounces = true
+        webView.scrollView.alwaysBounceVertical = true
 
         // Wrap Capacitor's navigation delegate to show our offline page only for real connection errors
         // (server.errorPath would also fire for cancelled navigations, e.g. links opened in Safari).
