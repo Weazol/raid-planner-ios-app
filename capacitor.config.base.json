@@ -1,0 +1,11 @@
+{
+  "appId": "de.weazol.raidplanner",
+  "appName": "Raid-Planner",
+  "webDir": "www",
+  "backgroundColor": "#061933",
+  "appendUserAgent": "RaidPlannerApp/1.0",
+  "ios": {
+    "contentInset": "never",
+    "allowsLinkPreview": false
+  }
+}

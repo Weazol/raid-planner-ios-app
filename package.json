@@ -1,0 +1,20 @@
+{
+  "name": "raid-planner-ios-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "iOS app (Capacitor shell) for the Raid-Planner web frontend",
+  "scripts": {
+    "configure": "node scripts/configure.mjs",
+    "sync": "node scripts/configure.mjs && cap sync ios",
+    "open": "cap open ios",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
+    "sharp": "^0.34.4"
+  }
+}
