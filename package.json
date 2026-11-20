@@ -4,8 +4,7 @@
   "private": true,
   "description": "iOS app (Capacitor shell) for the Raid-Planner web frontend",
   "scripts": {
-    "configure": "node scripts/configure.mjs",
-    "sync": "node scripts/configure.mjs && cap sync ios",
+    "sync": "cap sync ios",
     "open": "cap open ios",
     "icons": "node scripts/generate-icons.mjs"
   },

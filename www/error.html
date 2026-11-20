@@ -20,14 +20,16 @@
     button { appearance: none; border: 0; border-radius: 8px; background: var(--primary);
       color: var(--on-primary); font: inherit; font-weight: 600; padding: 12px 28px; }
     button:active { opacity: .8; }
+    a { display: inline-block; margin-top: 16px; color: var(--muted); font-size: 14px; }
   </style>
 </head>
 <body>
   <div class="panel">
     <img src="logo.svg" alt="">
     <h1>Keine Verbindung</h1>
-    <p>Der Raid-Planner ist gerade nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.</p>
+    <p>Der Raid-Planner ist gerade nicht erreichbar. Prüfe deine Internetverbindung oder die eingetragene Adresse.</p>
     <button id="retry" type="button">Erneut versuchen</button>
+    <br><a href="index.html">Adresse ändern</a>
   </div>
   <script>
     // The app passes its server.url (capacitor.config.json); only http(s) targets are followed.

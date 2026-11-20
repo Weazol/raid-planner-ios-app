@@ -1,5 +1,5 @@
 # Compiles the app unsigned for the iOS simulator on every push and pull request, so the native code
-# is checked even without a Mac. Built against placeholder hosts, so no artifact is kept.
+# is checked even without a Mac.
 # Device / TestFlight builds are made in Xcode, see README.md.
 name: iOS
 
@@ -14,9 +14,6 @@ permissions:
 jobs:
   simulator-build:
     runs-on: macos-latest
-    env:
-      RP_APP_URL: https://raid-planner.example.org
-      RP_AUTH_HOST: keycloak.example.org
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +29,7 @@ jobs:
       - name: Install
         run: npm ci
 
-      # writes capacitor.config.json, copies www + config into the Xcode project, writes the SPM package list
+      # copies www + capacitor.config.json into the Xcode project, writes the SPM package list
       - name: Capacitor sync
         run: npm run sync
 

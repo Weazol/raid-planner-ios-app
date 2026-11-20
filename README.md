@@ -5,12 +5,12 @@ A native iOS app around the Raid-Planner web frontend, built with [Capacitor 8](
 
 ## How it works
 
-The app is a native shell whose `WKWebView` loads the hosted web app (`appUrl`, see
-[Configuration](#configuration)):
+The app is a native shell whose `WKWebView` loads the hosted web app. Its address is entered in
+the app, so no host is built in (see [Addresses](#addresses)):
 
 - **Same origin as in the browser**: API calls, Keycloak login and silent SSO behave exactly like in
   Safari. Every web deploy reaches the app at once; a new app build is only needed for native changes.
-- The Keycloak host (`authHost`) is allowed for navigation, so the login page opens inside the app.
+- The login server (Keycloak host) is allowed for navigation, so the login page opens inside the app.
   Other external links (e.g. PayPal) and everything opened in a new tab go to Safari.
 - Native touches (`ios/App/App/AppViewController.swift`):
   - the web view stays inside the safe area (notch / Dynamic Island / home indicator), the strips
@@ -30,28 +30,29 @@ i.e. cross-origin to the API and to Keycloak. That would need CORS in the backen
 redirect URIs/web origins and a different login flow (silent SSO iframes do not work cross-site in
 WKWebView). The shell avoids all of it.
 
-## Configuration
+## Addresses
 
-The hosts of a deployment are not part of this repository:
+On the first start the app shows a setup page (`www/index.html`) with two fields:
 
-```bash
-cp app.local.example.json app.local.json   # gitignored, fill in appUrl and authHost
-```
+| Field                      | Example                              |
+|----------------------------|--------------------------------------|
+| Adresse des Raid-Planners  | `https://raid-planner.example.org` (`https://` may be left out) |
+| Login-Server               | `keycloak.example.org`; suggested from the first field (`keycloak.` + its parent domain) |
 
-| Key        | Meaning                                                   |
-|------------|-----------------------------------------------------------|
-| `appUrl`   | https origin of the web app, e.g. `https://raid-planner.example.org` |
-| `authHost` | host name of Keycloak, e.g. `keycloak.example.org`         |
+The values are stored in the app (`UserDefaults`, keys `appUrl` / `authHost`) and can be changed
+later in the **iOS Settings app → Raid-Planner** (`Settings.bundle`; applied when the app comes back
+to the foreground) or via "Adresse ändern" on the offline page. Only the bundled setup page can
+save them, never the loaded web app. Validation and normalization: `ios/App/App/AppSettings.swift`.
 
-`npm run sync` (or only `npm run configure`) writes the gitignored `capacitor.config.json` from
-`capacitor.config.base.json` plus these values. The environment variables `RP_APP_URL` and
-`RP_AUTH_HOST` take precedence over the file (used by CI).
+Capacitor reads the server address once per bridge, so after a change `RootViewController` creates
+a new bridge (`AppBridgeViewController.instanceDescriptor()` sets `serverURL` and adds the login
+server to the allowed navigation hosts).
 
 ## Build and run (needs a Mac with a current Xcode)
 
 ```bash
 npm ci
-npm run sync            # writes the config, copies www/ + config into the Xcode project
+npm run sync            # copies www/ + capacitor.config.json into the Xcode project
 npm run open            # opens ios/App/App.xcodeproj in Xcode
 ```
 
@@ -75,15 +76,15 @@ number for every TestFlight upload (*Product → Archive → Distribute App*).
 ## CI
 
 [`.github/workflows/ios.yml`](.github/workflows/ios.yml) compiles the app unsigned for the iOS
-simulator on every push, against placeholder hosts (`example.org`).
+simulator on every push.
 
 ## Changing things
 
 | What                         | Where                                                                   |
 |------------------------------|-------------------------------------------------------------------------|
-| hosts                        | `app.local.json`, then `npm run sync`                                   |
-| app id, name, colors         | `capacitor.config.base.json` (app id also in Xcode)                     |
-| test against a local stack   | `appUrl` = `http://<pc-ip>:4200` is rejected by `configure` (https only); for such a test edit the generated `capacitor.config.json` by hand, add `NSAppTransportSecurity` → `NSAllowsLocalNetworking` to `Info.plist`, and allow the host in the local realm's redirect URIs |
+| app id, name, colors         | `capacitor.config.json` (app id also in Xcode)                          |
+| test against a local stack   | enter `http://<pc-ip>:4200` and the local Keycloak host in the app (`NSAllowsLocalNetworking` in `Info.plist` permits plain http in the local network); the local realm's redirect URIs must allow that host |
+| setup page / settings        | `www/index.html`, `ios/App/App/Settings.bundle/Root.plist`, `ios/App/App/AppSettings.swift` |
 | native behavior              | `ios/App/App/AppViewController.swift`                                    |
 | icon / launch screen         | `scripts/generate-icons.mjs`, `npm run icons`                            |
 | offline page                 | `www/error.html`, then `npm run sync`                                    |

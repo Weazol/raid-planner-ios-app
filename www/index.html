@@ -2,15 +2,125 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Raid-Planner</title>
-  <!-- Only a placeholder: the app loads server.url from capacitor.config.json.
-       Capacitor needs a local start file anyway. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Raid-Planner einrichten</title>
+  <!-- Setup page: shown on first start (nothing configured) and via "Adresse ändern".
+       The app (AppViewController.swift) injects window.rpSetup and receives the form via
+       window.webkit.messageHandlers.rpSetup. -->
   <style>
-    html, body { margin: 0; height: 100%; background: #061933; }
-    body { display: flex; align-items: center; justify-content: center; }
-    img { width: 40vw; max-width: 220px; opacity: .9; }
+    :root {
+      --bg: #061933; --surface: #0b2545; --surface-2: #123257; --line: #1e4470; --line-strong: #2a5585;
+      --text: #e6f1f7; --muted: #9fb6c8; --primary: #39b7cd; --on-primary: #04222b; --danger: #f07167;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Roboto, sans-serif; }
+    body { display: flex; align-items: center; justify-content: center; padding: 24px 16px; min-height: 100vh; }
+    .panel { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line);
+      border-radius: 12px; padding: 28px 20px; }
+    .logo { display: block; width: 110px; margin: 0 auto 12px; }
+    h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; text-align: center; }
+    .intro { color: var(--muted); margin: 0 0 24px; text-align: center; font-size: 15px; }
+    label { display: block; font-weight: 600; font-size: 14px; margin: 0 0 6px; }
+    input { width: 100%; font: inherit; color: var(--text); background: var(--surface-2);
+      border: 1px solid var(--line-strong); border-radius: 8px; padding: 12px; }
+    input:focus { outline: 2px solid var(--primary); outline-offset: 1px; border-color: transparent; }
+    .hint { color: var(--muted); font-size: 13px; margin: 6px 0 18px; }
+    .error { color: var(--danger); font-size: 14px; margin: 0 0 16px; }
+    .error:empty { display: none; }
+    .actions { display: flex; gap: 12px; margin-top: 8px; }
+    button { flex: 1; appearance: none; border: 0; border-radius: 8px; font: inherit; font-weight: 600; padding: 12px; }
+    button[type=submit] { background: var(--primary); color: var(--on-primary); }
+    button[type=button] { background: transparent; color: var(--text); border: 1px solid var(--line-strong); }
+    button:disabled { opacity: .6; }
+    [hidden] { display: none !important; }
+    .footer { color: var(--muted); font-size: 13px; text-align: center; margin: 20px 0 0; }
   </style>
 </head>
-<body><img src="logo.svg" alt="Raid-Planner"></body>
+<body>
+  <form class="panel" id="setup" novalidate>
+    <img class="logo" src="logo.svg" alt="">
+    <h1>Raid-Planner einrichten</h1>
+    <p class="intro">Gib die Adresse deines Raid-Planners ein. Das ist nur einmal nötig.</p>
+
+    <label for="appUrl">Adresse des Raid-Planners</label>
+    <input id="appUrl" name="appUrl" type="url" inputmode="url" autocomplete="url"
+           autocapitalize="off" autocorrect="off" spellcheck="false"
+           placeholder="https://raid-planner.example.org">
+    <p class="hint">Dieselbe Adresse wie im Browser.</p>
+
+    <label for="authHost">Login-Server</label>
+    <input id="authHost" name="authHost" type="text" inputmode="url"
+           autocapitalize="off" autocorrect="off" spellcheck="false"
+           placeholder="keycloak.example.org">
+    <p class="hint" id="authHint">Der Server, auf dem du dich anmeldest (Keycloak). So bleibt die Anmeldung in der App.</p>
+
+    <p class="error" id="error" role="alert"></p>
+
+    <div class="actions">
+      <button type="button" id="cancel" hidden>Abbrechen</button>
+      <button type="submit" id="save">Verbinden</button>
+    </div>
+    <p class="footer">Später änderbar in den iOS-Einstellungen unter „Raid-Planner“.</p>
+  </form>
+
+  <script>
+    (function () {
+      var values = window.rpSetup || {};
+      var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.rpSetup;
+      var form = document.getElementById('setup');
+      var appUrl = document.getElementById('appUrl');
+      var authHost = document.getElementById('authHost');
+      var authHint = document.getElementById('authHint');
+      var error = document.getElementById('error');
+      var save = document.getElementById('save');
+      var cancel = document.getElementById('cancel');
+
+      appUrl.value = values.appUrl || '';
+      authHost.value = values.authHost || '';
+      var authTouched = !!authHost.value;
+      cancel.hidden = !values.configured;
+
+      if (!bridge) {
+        error.textContent = 'Diese Seite funktioniert nur in der Raid-Planner-App.';
+        save.disabled = true;
+      }
+
+      // Suggest the login server from the app address: raid-planner.example.org -> keycloak.example.org
+      function suggestAuthHost() {
+        if (authTouched) { return; }
+        var text = appUrl.value.trim();
+        if (text && text.indexOf('://') < 0) { text = 'https://' + text; }
+        var host;
+        try { host = new URL(text).hostname; } catch (e) { return; }
+        var labels = host.split('.');
+        if (labels.length < 3) { return; }
+        authHost.value = 'keycloak.' + labels.slice(1).join('.');
+        authHint.textContent = 'Vorschlag aus der Adresse oben, bitte prüfen. Der Server, auf dem du dich anmeldest (Keycloak).';
+      }
+      appUrl.addEventListener('input', suggestAuthHost);
+      authHost.addEventListener('input', function () { authTouched = true; });
+
+      // The app answers with an error text, or switches to the Raid-Planner on success.
+      function post(message) {
+        error.textContent = '';
+        save.disabled = true;
+        save.textContent = 'Verbinde …';
+        return bridge.postMessage(message).catch(function (e) {
+          error.textContent = (e && e.message) || String(e);
+          save.disabled = false;
+          save.textContent = 'Verbinden';
+        });
+      }
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (bridge) { post({ action: 'save', appUrl: appUrl.value, authHost: authHost.value }); }
+      });
+      cancel.addEventListener('click', function () {
+        if (bridge) { post({ action: 'cancel' }); }
+      });
+    })();
+  </script>
+</body>
 </html>

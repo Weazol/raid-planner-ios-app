@@ -13,17 +13,48 @@ enum AppTheme {
 /// Root of the window. Keeps the web view inside the safe area, so the web app's header never
 /// slides under the notch / Dynamic Island and its bottom stays clear of the home indicator,
 /// without any change to the web app. The strips around it get the header color.
+///
+/// Capacitor reads the server address once, when its bridge is created. So whenever the addresses
+/// change (setup page, iOS Settings app), a new bridge view controller replaces the old one.
 final class RootViewController: UIViewController {
-    private let bridgeViewController = AppBridgeViewController()
+    private var bridgeViewController: AppBridgeViewController?
+    private var shownSettings: AppSettings?
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = AppTheme.background
+        showBridge()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
 
-        addChild(bridgeViewController)
-        let content: UIView = bridgeViewController.view
+    /// The addresses may have been changed in the iOS Settings app meanwhile.
+    @objc private func appWillEnterForeground() {
+        if AppSettings.stored != shownSettings {
+            showBridge()
+        }
+    }
+
+    private func showBridge() {
+        let settings = AppSettings.stored
+        shownSettings = settings
+
+        if let old = bridgeViewController {
+            old.willMove(toParent: nil)
+            old.view.removeFromSuperview()
+            old.removeFromParent()
+        }
+
+        let next = AppBridgeViewController(settings: settings)
+        next.onSettingsSaved = { [weak self] in
+            // not from within the web view's message callback
+            DispatchQueue.main.async { self?.showBridge() }
+        }
+        addChild(next)
+        let content: UIView = next.view
         content.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(content)
         let safeArea = view.safeAreaLayoutGuide
@@ -33,24 +64,69 @@ final class RootViewController: UIViewController {
             content.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor)
         ])
-        bridgeViewController.didMove(toParent: self)
+        next.didMove(toParent: self)
+        bridgeViewController = next
     }
 }
 
 /// The Capacitor web view with a few native touches:
-/// swipe back/forward, pull to refresh, an own offline page and the new design as default.
+/// server address from the settings (else the local setup page), swipe back/forward, pull to
+/// refresh, an own offline page and the new design as default.
 final class AppBridgeViewController: CAPBridgeViewController {
+    /// nil = nothing configured yet, Capacitor shows the bundled setup page (www/index.html)
+    let settings: AppSettings?
+    var onSettingsSaved: (() -> Void)?
+
     private var navigationProxy: NavigationDelegateProxy?
     private let refreshControl = UIRefreshControl()
 
+    init(settings: AppSettings?) {
+        self.settings = settings
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("created in code by RootViewController")
+    }
+
+    override func instanceDescriptor() -> InstanceDescriptor {
+        let descriptor = super.instanceDescriptor()
+        if let settings = settings {
+            // like server.url / server.allowNavigation in capacitor.config.json
+            descriptor.serverURL = settings.appURL.absoluteString
+            descriptor.allowedNavigationHostnames = descriptor.allowedNavigationHostnames + [settings.authHost]
+        }
+        return descriptor
+    }
+
     override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
         let configuration = super.webViewConfiguration(for: instanceConfiguration)
-        if let host = instanceConfiguration.serverURL.host {
-            configuration.userContentController.addUserScript(WKUserScript(
+        let contentController = configuration.userContentController
+        let localScheme = instanceConfiguration.localURL.scheme ?? "capacitor"
+
+        if let host = settings?.appURL.host {
+            contentController.addUserScript(WKUserScript(
                 source: AppScripts.preferNewDesign(onHost: host),
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true))
         }
+
+        // current values for the setup page
+        let raw = AppSettings.rawStored
+        contentController.addUserScript(WKUserScript(
+            source: AppScripts.setupValues(localScheme: localScheme, appURL: raw.appURL,
+                                           authHost: raw.authHost, configured: settings != nil),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true))
+
+        let handler = SetupMessageHandler(localScheme: localScheme)
+        handler.onSaved = { [weak self] in self?.onSettingsSaved?() }
+        handler.onCancel = { [weak self] in
+            guard let self = self, let settings = self.settings else { return }
+            self.webView?.load(URLRequest(url: settings.appURL))
+        }
+        contentController.addScriptMessageHandler(handler, contentWorld: .page, name: SetupMessageHandler.name)
+
         return configuration
     }
 
@@ -82,9 +158,13 @@ final class AppBridgeViewController: CAPBridgeViewController {
             refreshControl.endRefreshing()
             return
         }
-        // On the local offline page a reload would only show it again: go to the app instead.
+        // On a local page (offline / setup) go to the app, if there is one.
         if webView.url?.scheme == config.localURL.scheme {
-            webView.load(URLRequest(url: config.serverURL))
+            if let settings = settings {
+                webView.load(URLRequest(url: settings.appURL))
+            } else {
+                webView.reload()
+            }
             return
         }
         // WKWebView ignores beforeunload prompts, so ask natively before unsaved input is lost.
@@ -110,6 +190,53 @@ final class AppBridgeViewController: CAPBridgeViewController {
             self?.webView?.reload()
         })
         present(alert, animated: true)
+    }
+}
+
+/// Receives the setup page's form: window.webkit.messageHandlers.rpSetup.postMessage(...)
+/// Only the bundled setup page may change the addresses, never the loaded web app.
+@MainActor
+final class SetupMessageHandler: NSObject, WKScriptMessageHandlerWithReply {
+    static let name = "rpSetup"
+
+    private let localScheme: String
+    var onSaved: (() -> Void)?
+    var onCancel: (() -> Void)?
+
+    init(localScheme: String) {
+        self.localScheme = localScheme
+    }
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage,
+                               replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
+        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.protocol == localScheme else {
+            replyHandler(nil, "Nicht erlaubt.")
+            return
+        }
+        guard let body = message.body as? [String: Any] else {
+            replyHandler(nil, "Ungültige Nachricht.")
+            return
+        }
+
+        switch body["action"] as? String {
+        case "save":
+            do {
+                let settings = try AppSettings.validated(
+                    appURL: body["appUrl"] as? String ?? "",
+                    authHost: body["authHost"] as? String ?? "")
+                settings.save()
+                replyHandler(true, nil)
+                onSaved?()
+            } catch {
+                replyHandler(nil, error.localizedDescription)
+            }
+        case "cancel":
+            replyHandler(true, nil)
+            onCancel?()
+        default:
+            replyHandler(nil, "Unbekannte Aktion.")
+        }
     }
 }
 
@@ -164,15 +291,23 @@ enum AppScripts {
     /// Makes the new design the default in the app, also on the iPad where the web app would start
     /// with the old one. An explicit choice in the profile menu (localStorage rp-design) still wins.
     static func preferNewDesign(onHost host: String) -> String {
-        let hostLiteral = (try? String(data: JSONEncoder().encode(host), encoding: .utf8)) ?? "\"\""
         return """
         (function () {
           try {
-            if (location.hostname === \(hostLiteral) && !localStorage.getItem('rp-design')) {
+            if (location.hostname === \(jsLiteral(host)) && !localStorage.getItem('rp-design')) {
               localStorage.setItem('rp-design', 'new');
             }
           } catch (e) {}
         })();
+        """
+    }
+
+    /// window.rpSetup for the bundled setup page (only on local pages, not in the web app).
+    static func setupValues(localScheme: String, appURL: String, authHost: String, configured: Bool) -> String {
+        return """
+        if (location.protocol === \(jsLiteral(localScheme + ":"))) {
+          window.rpSetup = { appUrl: \(jsLiteral(appURL)), authHost: \(jsLiteral(authHost)), configured: \(configured) };
+        }
         """
     }
 
@@ -193,5 +328,13 @@ enum AppScripts {
         var components = URLComponents(url: localURL.appendingPathComponent("error.html"), resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "url", value: appURL.absoluteString)]
         return components?.url ?? localURL.appendingPathComponent("error.html")
+    }
+
+    /// A JavaScript string literal (JSON-encoded, so quotes and line breaks are escaped).
+    private static func jsLiteral(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value), let literal = String(data: data, encoding: .utf8) else {
+            return "\"\""
+        }
+        return literal
     }
 }
