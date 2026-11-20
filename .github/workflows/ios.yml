@@ -1,6 +1,7 @@
-# Compiles the app unsigned for the iOS simulator on every push and pull request, so the native code
-# is checked even without a Mac.
-# Device / TestFlight builds are made in Xcode, see README.md.
+# On every push and pull request:
+#   simulator-build  compiles the app for the iOS simulator (checks the native code without a Mac)
+#   device-ipa       builds an UNSIGNED Raid-Planner.ipa for iPhone/iPad (artifact of the run);
+#                    sign and install it with Sideloadly or AltStore, see README.md
 name: iOS
 
 on:
@@ -45,3 +46,41 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+  device-ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Capacitor sync
+        run: npm run sync
+
+      # unsigned; the build number is the run number, so a newer IPA installs over an older one
+      - name: Build for devices
+        run: |
+          xcodebuild             -project ios/App/App.xcodeproj             -scheme App             -configuration Release             -sdk iphoneos             -destination 'generic/platform=iOS'             -derivedDataPath build             CURRENT_PROJECT_VERSION=${{ github.run_number }}             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             build
+
+      - name: Pack IPA
+        run: |
+          mkdir -p ipa/Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app ipa/Payload/
+          (cd ipa && zip -qry ../Raid-Planner.ipa Payload)
+          ls -l Raid-Planner.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Raid-Planner-ipa-${{ github.run_number }}
+          path: Raid-Planner.ipa
+          retention-days: 30

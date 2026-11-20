@@ -75,8 +75,26 @@ number for every TestFlight upload (*Product → Archive → Distribute App*).
 
 ## CI
 
-[`.github/workflows/ios.yml`](.github/workflows/ios.yml) compiles the app unsigned for the iOS
-simulator on every push.
+[`.github/workflows/ios.yml`](.github/workflows/ios.yml) runs on every push:
+
+- `simulator-build` compiles the app for the iOS simulator.
+- `device-ipa` builds an **unsigned** `Raid-Planner.ipa` for iPhone/iPad. Download it from the run
+  (Actions → run → *Artifacts* → `Raid-Planner-ipa-<run number>`, a zip containing the IPA).
+
+## Install without a Mac (Windows)
+
+An unsigned IPA must be signed before iOS installs it. Sideloadly or AltStore do that with your
+Apple ID (a free one is enough):
+
+1. Install [Sideloadly](https://sideloadly.io) (or AltServer for AltStore) and iTunes/iCloud from
+   Apple's website (not the Microsoft Store version), connect the iPhone by cable, trust the PC.
+2. Drag `Raid-Planner.ipa` into Sideloadly, enter your Apple ID, *Start*.
+3. On the iPhone: *Settings → General → VPN & Device Management* → trust your Apple ID, and enable
+   *Settings → Privacy & Security → Developer Mode* (restart).
+
+With a free Apple ID the signature lasts **7 days** (then sign again; AltStore can refresh it in
+the background while the PC is in the same Wi-Fi), and at most 3 sideloaded apps at a time.
+A newer IPA (higher run number) installs over the old one; the entered addresses stay.
 
 ## Changing things
 
