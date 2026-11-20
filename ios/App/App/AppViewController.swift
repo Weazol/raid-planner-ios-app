@@ -140,6 +140,12 @@ final class AppBridgeViewController: CAPBridgeViewController {
     /// the userContentController of webViewConfiguration(for:) with its own, but loads the start page
     /// only later (viewDidLoad).
     private func installContentScripts(on contentController: WKUserContentController, localScheme: String) {
+        // runs after Capacitor's own scripts (same injection time, added later)
+        contentController.addUserScript(WKUserScript(
+            source: AppScripts.hideCordova,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true))
+
         if let host = settings?.appURL.host {
             contentController.addUserScript(WKUserScript(
                 source: AppScripts.preferNewDesign(onHost: host),
@@ -399,6 +405,16 @@ final class NavigationDelegateProxy: NSObject, WKNavigationDelegate {
 }
 
 enum AppScripts {
+    /// Capacitor's native bridge always defines window.cordova (legacy shim). keycloak-js takes that
+    /// as "running in Cordova" and switches to its Cordova adapter (redirect_uri http://localhost/,
+    /// InAppBrowser login), so the silent SSO check never completes and the web app reloads forever.
+    /// The app uses no Cordova plugins, so the shim goes.
+    static let hideCordova = """
+        (function () {
+          try { delete window.cordova; delete window.Cordova; } catch (e) {}
+        })();
+        """
+
     /// Makes the new design the default in the app, also on the iPad where the web app would start
     /// with the old one. An explicit choice in the profile menu (localStorage rp-design) still wins.
     static func preferNewDesign(onHost host: String) -> String {

@@ -104,7 +104,7 @@ final class DebugLog {
             bodySize: body ? body.scrollWidth + 'x' + body.scrollHeight : null,
             viewport: window.innerWidth + 'x' + window.innerHeight,
             text: body ? (body.innerText || '').replace(/\\s+/g, ' ').slice(0, 300) : null,
-            design: design, cookies: document.cookie ? document.cookie.split(';').length : 0
+            design: design, cordova: ('cordova' in window) || ('Cordova' in window), cookies: document.cookie ? document.cookie.split(';').length : 0
           });
         })();
         """
