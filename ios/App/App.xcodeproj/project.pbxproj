@@ -18,7 +18,6 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		A1B2C3D42FF0000100AA0001 /* AppViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42FF0000100AA0002 /* AppViewController.swift */; };
 		A1B2C3D42FF0000100AA0003 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42FF0000100AA0004 /* AppSettings.swift */; };
-		A1B2C3D42FF0000100AA0007 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42FF0000100AA0008 /* DebugLog.swift */; };
 		A1B2C3D42FF0000100AA0005 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42FF0000100AA0006 /* Settings.bundle */; };
 /* End PBXBuildFile section */
 
@@ -35,7 +34,6 @@
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		A1B2C3D42FF0000100AA0002 /* AppViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewController.swift; sourceTree = "<group>"; };
 		A1B2C3D42FF0000100AA0004 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
-		A1B2C3D42FF0000100AA0008 /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
 		A1B2C3D42FF0000100AA0006 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -75,7 +73,6 @@
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				A1B2C3D42FF0000100AA0002 /* AppViewController.swift */,
 				A1B2C3D42FF0000100AA0004 /* AppSettings.swift */,
-				A1B2C3D42FF0000100AA0008 /* DebugLog.swift */,
 				A1B2C3D42FF0000100AA0006 /* Settings.bundle */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -175,7 +172,6 @@
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				A1B2C3D42FF0000100AA0001 /* AppViewController.swift in Sources */,
 				A1B2C3D42FF0000100AA0003 /* AppSettings.swift in Sources */,
-				A1B2C3D42FF0000100AA0007 /* DebugLog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
