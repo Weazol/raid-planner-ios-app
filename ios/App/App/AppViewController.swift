@@ -22,17 +22,49 @@ final class RootViewController: UIViewController {
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
+    private let debugButton = DebugButton()
+    private var loggedBridgeFrame: CGRect?
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = AppTheme.background
+        let info = Bundle.main.infoDictionary
+        DebugLog.add("app start, version \(info?["CFBundleShortVersionString"] ?? "?") build \(info?["CFBundleVersion"] ?? "?"), "
+            + "\(UIDevice.current.model) \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
         showBridge()
+
+        // TEMPORARY: debug log button, bottom left
+        debugButton.onTap = { [weak self] in self?.showDebugLog() }
+        debugButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(debugButton)
+        NSLayoutConstraint.activate([
+            debugButton.widthAnchor.constraint(equalToConstant: 36),
+            debugButton.heightAnchor.constraint(equalToConstant: 36),
+            debugButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8),
+            debugButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8)
+        ])
         NotificationCenter.default.addObserver(
             self, selector: #selector(appWillEnterForeground),
             name: UIApplication.willEnterForegroundNotification, object: nil)
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if let frame = bridgeViewController?.view.frame, frame != loggedBridgeFrame {
+            loggedBridgeFrame = frame
+            DebugLog.add("web view frame \(frame)")
+        }
+    }
+
+    private func showDebugLog() {
+        let navigation = UINavigationController(rootViewController: DebugLogViewController())
+        navigation.overrideUserInterfaceStyle = .dark
+        present(navigation, animated: true)
+    }
+
     /// The addresses may have been changed in the iOS Settings app meanwhile.
     @objc private func appWillEnterForeground() {
+        DebugLog.add("will enter foreground")
         if AppSettings.stored != shownSettings {
             showBridge()
         }
@@ -41,6 +73,9 @@ final class RootViewController: UIViewController {
     private func showBridge() {
         let settings = AppSettings.stored
         shownSettings = settings
+        let raw = AppSettings.rawStored
+        DebugLog.add("showBridge: settings \(settings.map { "\($0.appURL.absoluteString) / \($0.authHost)" } ?? "nil (setup page)"), "
+            + "raw '\(raw.appURL)' / '\(raw.authHost)'")
 
         if let old = bridgeViewController {
             old.willMove(toParent: nil)
@@ -66,6 +101,8 @@ final class RootViewController: UIViewController {
         ])
         next.didMove(toParent: self)
         bridgeViewController = next
+        loggedBridgeFrame = nil
+        view.bringSubviewToFront(debugButton)
     }
 }
 
@@ -131,7 +168,13 @@ final class AppBridgeViewController: CAPBridgeViewController {
         super.capacitorDidLoad()
         guard let webView = webView, let config = bridge?.config else { return }
 
-        installContentScripts(on: webView.configuration.userContentController,
+        DebugLog.add("capacitorDidLoad: serverURL \(config.serverURL), localURL \(config.localURL), "
+            + "start \(config.appStartServerURL), allowNavigation \(config.allowedNavigationHostnames)")
+        let contentController = webView.configuration.userContentController
+        contentController.addUserScript(WKUserScript(
+            source: DebugLog.consoleScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        contentController.add(DebugMessageHandler(), contentWorld: .page, name: DebugMessageHandler.name)
+        installContentScripts(on: contentController,
                               localScheme: config.localURL.scheme ?? "capacitor")
         webView.allowsBackForwardNavigationGestures = true
         // Capacitor turns bouncing off, but the pull-to-refresh control needs it
@@ -144,10 +187,14 @@ final class AppBridgeViewController: CAPBridgeViewController {
             let proxy = NavigationDelegateProxy(inner: inner)
             proxy.onLoadEnded = { [weak self] in self?.refreshControl.endRefreshing() }
             proxy.onConnectionError = { webView in
+                DebugLog.add("connection error -> offline page")
                 webView.load(URLRequest(url: AppScripts.errorPageURL(localURL: config.localURL, appURL: config.serverURL)))
             }
             navigationProxy = proxy
             webView.navigationDelegate = proxy
+            DebugLog.add("navigation proxy installed around \(type(of: inner))")
+        } else {
+            DebugLog.add("no navigation delegate to wrap")
         }
 
         refreshControl.tintColor = AppTheme.muted
@@ -228,6 +275,7 @@ final class SetupMessageHandler: NSObject, WKScriptMessageHandlerWithReply {
                     appURL: body["appUrl"] as? String ?? "",
                     authHost: body["authHost"] as? String ?? "")
                 settings.save()
+                DebugLog.add("setup saved: \(settings.appURL.absoluteString) / \(settings.authHost)")
                 replyHandler(true, nil)
                 onSaved?()
             } catch {
@@ -264,19 +312,80 @@ final class NavigationDelegateProxy: NSObject, WKNavigationDelegate {
         return super.forwardingTarget(for: aSelector)
     }
 
+    // TEMPORARY debug logging of the navigation flow, all calls still go to Capacitor.
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        let url = navigationAction.request.url?.absoluteString ?? "nil"
+        let frame = navigationAction.targetFrame.map { $0.isMainFrame ? "main" : "sub" } ?? "new window"
+        let logged: (WKNavigationActionPolicy) -> Void = { policy in
+            DebugLog.add("nav action \(policy == .allow ? "ALLOW" : "CANCEL") [\(frame), type \(navigationAction.navigationType.rawValue)] \(url)")
+            decisionHandler(policy)
+        }
+        if inner?.webView?(webView, decidePolicyFor: navigationAction, decisionHandler: logged) == nil {
+            logged(.allow)
+        }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        let status = (navigationResponse.response as? HTTPURLResponse).map { "HTTP \($0.statusCode)" } ?? "no HTTP"
+        DebugLog.add("nav response \(status) [\(navigationResponse.isForMainFrame ? "main" : "sub"), "
+            + "\(navigationResponse.response.mimeType ?? "?"), canShow \(navigationResponse.canShowMIMEType)] "
+            + "\(navigationResponse.response.url?.absoluteString ?? "nil")")
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        DebugLog.add("did start \(webView.url?.absoluteString ?? "nil")")
+        inner?.webView?(webView, didStartProvisionalNavigation: navigation)
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        DebugLog.add("redirect to \(webView.url?.absoluteString ?? "nil")")
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        DebugLog.add("did commit \(webView.url?.absoluteString ?? "nil")")
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        DebugLog.add("did finish \(webView.url?.absoluteString ?? "nil"), opaque \(webView.isOpaque)")
         inner?.webView?(webView, didFinish: navigation)
         onLoadEnded?()
+        logSnapshot(of: webView, label: "snapshot at finish")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak webView] in
+            if let webView = webView {
+                self.logSnapshot(of: webView, label: "snapshot +5s")
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        DebugLog.add("did fail: \(DebugLog.describe(error))")
         inner?.webView?(webView, didFail: navigation, withError: error)
         handle(error, in: webView)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        DebugLog.add("did fail provisional: \(DebugLog.describe(error))")
         inner?.webView?(webView, didFailProvisionalNavigation: navigation, withError: error)
         handle(error, in: webView)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        DebugLog.add("web content process terminated")
+        inner?.webViewWebContentProcessDidTerminate?(webView)
+    }
+
+    private func logSnapshot(of webView: WKWebView, label: String) {
+        webView.evaluateJavaScript(DebugLog.snapshotScript) { result, error in
+            if let error = error {
+                DebugLog.add("\(label) failed: \(DebugLog.describe(error))")
+            } else {
+                DebugLog.add("\(label): \(result ?? "nil")")
+            }
+        }
     }
 
     private func handle(_ error: Error, in webView: WKWebView) {
